@@ -69,6 +69,7 @@ import 'package:grid_frontend/widgets/map_icon_info_bubble.dart';
 import 'package:grid_frontend/widgets/app_review_prompt.dart';
 import 'package:uuid/uuid.dart';
 import 'package:grid_frontend/services/map_icon_sync_service.dart';
+import 'package:grid_frontend/services/avatar_announcement_service.dart';
 import 'package:grid_frontend/services/passkey_service.dart';
 import 'package:grid_frontend/screens/settings/passkey_management_screen.dart';
 
@@ -685,10 +686,18 @@ class _MapTabState extends State<MapTab> with TickerProviderStateMixin, WidgetsB
       // Immediately try to get current location to avoid showing default location
       _locationManager?.grabLocationAndPing().then((_) {
         if (mounted && _locationManager?.currentLatLng != null && _isMapReady && !_initialZoomCalculated) {
-          // If map is ready and we haven't zoomed yet, do it now
-          _zoom = 3.5; // Full country view for faster loading
-          _mapController.moveAndRotate(_locationManager!.currentLatLng!, _zoom, 0);
-          // Don't setState here - let _onLocationUpdate handle it to avoid double setState
+          final userLocations = context.read<MapBloc>().state.userLocations;
+          if (userLocations.isNotEmpty) {
+            final result = _calculateOptimalZoomAndCenter(
+              _locationManager!.currentLatLng!,
+              userLocations,
+            );
+            _zoom = result.zoom;
+            _mapController.moveAndRotate(result.center, _zoom, 0);
+          } else {
+            _zoom = 3.5; // Full country view for faster loading
+            _mapController.moveAndRotate(_locationManager!.currentLatLng!, _zoom, 0);
+          }
           _initialZoomCalculated = true;
         }
       });
@@ -1036,9 +1045,23 @@ class _MapTabState extends State<MapTab> with TickerProviderStateMixin, WidgetsB
   
   void _sendPing() {
     _locationManager?.grabLocationAndPing();
+    
+    // Request locations from all active groups
+    try {
+      final client = context.read<Client>();
+      final avatarService = AvatarAnnouncementService(client);
+      for (final room in client.rooms) {
+        if (room.membership == Membership.join) {
+          avatarService.requestLocations(room.id);
+        }
+      }
+    } catch (e) {
+      print('Error requesting locations: $e');
+    }
+
     InAppNotifier.instance.show(
       title: 'Ping sent',
-      message: 'Location pinged to all active contacts and groups.',
+      message: 'Location pinged and requested from contacts.',
       variant: InAppNotificationVariant.success,
     );
 
@@ -1358,10 +1381,15 @@ class _MapTabState extends State<MapTab> with TickerProviderStateMixin, WidgetsB
   void _onMaplibreCameraChanged() {
     if (!mounted) return;
     _mapController.syncFromController();
+    
+    // Clear async cached positions. This forces _screenPosFor to use the 
+    // synchronous latLngToScreenPoint fallback, which provides zero-lag
+    // 60fps tracking during pan/zoom/rotate gestures.
+    _markerScreenPositions.clear();
+    
     // Re-position the marker overlay widgets to stay glued to the map
     // during pan/zoom gestures (not just on idle).
     setState(() {});
-    _refreshMarkerScreenPositions();
   }
 
   String _latLngKey(LatLng p) => '${p.latitude},${p.longitude}';
@@ -1751,9 +1779,6 @@ class _MapTabState extends State<MapTab> with TickerProviderStateMixin, WidgetsB
                       if (_locationManager?.currentLatLng == null) {
                         _locationManager?.grabLocationAndPing().then((_) {
                           if (_locationManager?.currentLatLng != null && mounted) {
-                            _zoom = 3.5;
-                            _mapController.moveAndRotate(_locationManager!.currentLatLng!, _zoom, 0);
-
                             final userLocations = context.read<MapBloc>().state.userLocations;
                             if (userLocations.isNotEmpty) {
                               final result = _calculateOptimalZoomAndCenter(
@@ -1762,14 +1787,14 @@ class _MapTabState extends State<MapTab> with TickerProviderStateMixin, WidgetsB
                               );
                               _zoom = result.zoom;
                               _mapController.moveAndRotate(result.center, _zoom, 0);
+                            } else {
+                              _zoom = 3.5;
+                              _mapController.moveAndRotate(_locationManager!.currentLatLng!, _zoom, 0);
                             }
                             setState(() => _initialZoomCalculated = true);
                           }
                         });
                       } else {
-                        _zoom = 3.5;
-                        _mapController.moveAndRotate(_locationManager!.currentLatLng!, _zoom, 0);
-
                         final userLocations = context.read<MapBloc>().state.userLocations;
                         if (userLocations.isNotEmpty) {
                           final result = _calculateOptimalZoomAndCenter(
@@ -1778,6 +1803,9 @@ class _MapTabState extends State<MapTab> with TickerProviderStateMixin, WidgetsB
                           );
                           _zoom = result.zoom;
                           _mapController.moveAndRotate(result.center, _zoom, 0);
+                        } else {
+                          _zoom = 3.5;
+                          _mapController.moveAndRotate(_locationManager!.currentLatLng!, _zoom, 0);
                         }
                         setState(() => _initialZoomCalculated = true);
                       }
@@ -2505,6 +2533,17 @@ class _MapTabState extends State<MapTab> with TickerProviderStateMixin, WidgetsB
                         _isAtResetView = false;
                         _unlockContactFollow();
                       });
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  _MapOverlayIconButton(
+                    icon: Icons.refresh_rounded,
+                    active: _isPingOnCooldown,
+                    tooltip: 'Refresh locations',
+                    onPressed: () {
+                      if (!_isPingOnCooldown) {
+                        _sendPing();
+                      }
                     },
                   ),
                 ],

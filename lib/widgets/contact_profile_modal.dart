@@ -956,7 +956,8 @@ class _ContactProfileModalState extends State<ContactProfileModal> {
           const SizedBox(width: 10),
           Switch.adaptive(
             value: _activeSharing,
-            activeColor: context.gridColors.mint,
+            activeTrackColor: context.gridColors.mint,
+            activeColor: Colors.white,
             onChanged: (value) => _toggleMutualSharing(value, firstName),
           ),
         ],

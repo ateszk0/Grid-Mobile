@@ -221,9 +221,7 @@ class CameraSnapshot {
     final c = center;
     if (c == null || mapSize == Size.zero) return Offset.zero;
     // Web Mercator projection at the current zoom & center.
-    // maplibre-native uses a 512px tile size for vector tiles; the world is
-    // 512 * 2^zoom pixels across. Using 256 here was half-scale and caused
-    // overlay markers to drift behind the map at low zoom.
+    // maplibre-native uses a 512px tile size for vector tiles.
     final scale = math.pow(2, zoom).toDouble() * 512.0;
     Offset project(LatLng p) {
       final x = (p.longitude + 180) / 360;
@@ -233,9 +231,23 @@ class CameraSnapshot {
     }
     final cp = project(c);
     final pp = project(point);
+    
+    // Unrotated delta from map center
+    final dx = pp.dx - cp.dx;
+    final dy = pp.dy - cp.dy;
+    
+    // Apply camera bearing (rotation). maplibre bearing is in degrees clockwise.
+    // To rotate the point around the center, we rotate the delta by -bearing.
+    final bearingRad = bearing * math.pi / 180.0;
+    final cosB = math.cos(-bearingRad);
+    final sinB = math.sin(-bearingRad);
+    
+    final rx = dx * cosB - dy * sinB;
+    final ry = dx * sinB + dy * cosB;
+
     return Offset(
-      mapSize.width / 2 + (pp.dx - cp.dx),
-      mapSize.height / 2 + (pp.dy - cp.dy),
+      mapSize.width / 2 + rx,
+      mapSize.height / 2 + ry,
     );
   }
 }

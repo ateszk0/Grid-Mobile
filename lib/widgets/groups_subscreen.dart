@@ -241,7 +241,8 @@ class _GroupsSubscreenState extends State<GroupsSubscreen> {
   }
 
   Widget _emptyState() {
-    return Padding(
+    return SingleChildScrollView(
+      controller: widget.scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -288,7 +289,8 @@ class _GroupsSubscreenState extends State<GroupsSubscreen> {
   }
 
   Widget _errorState(String message) {
-    return Padding(
+    return SingleChildScrollView(
+      controller: widget.scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
       child: Column(
         mainAxisSize: MainAxisSize.min,
