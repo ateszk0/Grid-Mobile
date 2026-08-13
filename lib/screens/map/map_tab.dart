@@ -1376,20 +1376,28 @@ class _MapTabState extends State<MapTab> with TickerProviderStateMixin, WidgetsB
 
     final userLocations = context.read<MapBloc>().state.userLocations;
     final mapIcons = context.read<MapIconsBloc>().state.filteredIcons;
-    if (userLocations.isEmpty && mapIcons.isEmpty) return;
+    if (userLocations.isEmpty && mapIcons.isEmpty && _homeLocation == null) return;
 
     // Collect all distinct LatLngs and remember the matching keys in order.
     final List<ml.LatLng> mlPoints = [];
     final List<String> keys = [];
+    final List<LatLng> dartPoints = []; // keep LatLng counterparts for fallback
     for (final u in userLocations) {
       if (!isFiniteLatLng(u.position.latitude, u.position.longitude)) continue;
       mlPoints.add(ml.LatLng(u.position.latitude, u.position.longitude));
       keys.add(_latLngKey(u.position));
+      dartPoints.add(u.position);
     }
     for (final i in mapIcons) {
       if (!isFiniteLatLng(i.position.latitude, i.position.longitude)) continue;
       mlPoints.add(ml.LatLng(i.position.latitude, i.position.longitude));
       keys.add(_latLngKey(i.position));
+      dartPoints.add(i.position);
+    }
+    if (_homeLocation != null && isFiniteLatLng(_homeLocation!.latitude, _homeLocation!.longitude)) {
+      mlPoints.add(ml.LatLng(_homeLocation!.latitude, _homeLocation!.longitude));
+      keys.add(_latLngKey(_homeLocation!));
+      dartPoints.add(_homeLocation!);
     }
     if (mlPoints.isEmpty) return;
 
@@ -1398,16 +1406,33 @@ class _MapTabState extends State<MapTab> with TickerProviderStateMixin, WidgetsB
       final screenPoints = await controller.toScreenLocationBatch(mlPoints);
       // Ignore stale responses — camera may have moved past us.
       if (!mounted || seq != _projectionSeq) return;
+      
+      // The maplibre-gl Android plugin returns physical pixels, but Flutter layouts 
+      // use logical pixels. We must scale down by devicePixelRatio to match the screen.
+      final pixelRatio = Theme.of(context).platform == TargetPlatform.android
+          ? MediaQuery.of(context).devicePixelRatio
+          : 1.0;
+          
       for (var idx = 0; idx < keys.length && idx < screenPoints.length; idx++) {
         final p = screenPoints[idx];
         _markerScreenPositions[keys[idx]] =
-            Offset(p.x.toDouble(), p.y.toDouble());
+            Offset(p.x.toDouble() / pixelRatio, p.y.toDouble() / pixelRatio);
       }
       setState(() {});
-    } catch (_) {
-      // toScreenLocation can race with map teardown — swallow.
+    } catch (e) {
+      // toScreenLocationBatch failed (e.g. map not fully ready on Android).
+      // Fall back to synchronous Mercator projection so markers still render.
+      debugPrint('[MapTab] toScreenLocationBatch error, using fallback: $e');
+      if (!mounted || seq != _projectionSeq) return;
+      for (var idx = 0; idx < keys.length; idx++) {
+        _markerScreenPositions[keys[idx]] =
+            _mapController.camera.latLngToScreenPoint(dartPoints[idx]);
+      }
+      setState(() {});
     }
   }
+
+
 
   Offset _screenPosFor(LatLng p) =>
       _markerScreenPositions[_latLngKey(p)] ??
@@ -1669,6 +1694,9 @@ class _MapTabState extends State<MapTab> with TickerProviderStateMixin, WidgetsB
           }
         } else if (!_initialZoomCalculated) {
         }
+        // Refresh marker screen positions whenever userLocations change so that
+        // newly-arrived contacts appear immediately even if the camera is idle.
+        if (_isMapReady) _refreshMarkerScreenPositions();
       },
       child: Scaffold(
             body: Stack(
@@ -1851,7 +1879,10 @@ class _MapTabState extends State<MapTab> with TickerProviderStateMixin, WidgetsB
                       }
                     }
                     // force refresh of marker overlay positions
-                    if (mounted) setState(() {});
+                    if (mounted) {
+                       setState(() {});
+                       _refreshMarkerScreenPositions();
+                    }
                   },
                   onCameraTrackingDismissed: () {
                     if (_followUser) setState(() => _followUser = false);

@@ -208,8 +208,15 @@ class CameraSnapshot {
 
   /// Synchronous best-effort Mercator projection. Used only for the
   /// icon-action-wheel placement in the old MapTab code path — close enough
-  /// for that purpose. Use the controller's async `toScreenLocation` for
-  /// anything that needs precision.
+  /// for that purpose.
+  ///
+  /// **WARNING**: This fallback is highly inaccurate during map gestures
+  /// (pan/zoom/rotate) because the underlying `CameraSnapshot` is stale
+  /// (only updated on `onCameraIdle`) and this calculation entirely ignores
+  /// map bearing (rotation). Do not use this as a fallback for markers!
+  ///
+  /// Use the controller's async `toScreenLocation` for anything that needs
+  /// precision and safety across gestures.
   Offset latLngToScreenPoint(LatLng point) {
     final c = center;
     if (c == null || mapSize == Size.zero) return Offset.zero;

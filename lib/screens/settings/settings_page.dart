@@ -3054,7 +3054,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _buildMenuOption({
-    required IconData icon,
+    required dynamic icon,
     required String title,
     String? trailing,
     required VoidCallback onTap,
@@ -3076,7 +3076,9 @@ class _SettingsPageState extends State<SettingsPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
               children: [
-                Icon(icon, size: 20, color: iconColor),
+                icon is IconData 
+                  ? Icon(icon, size: 20, color: iconColor)
+                  : FaIcon(icon, size: 20, color: iconColor),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Text(
