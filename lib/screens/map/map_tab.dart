@@ -2553,10 +2553,13 @@ class _MapTabState extends State<MapTab> with TickerProviderStateMixin, WidgetsB
             // Map Selector Overlay — removed (theme follows system brightness now).
 
 
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: MapScrollWindow(
-                isEditingMapIcon: _isEditingIconDescription,
+            Offstage(
+              offstage: ContactSheetController.instance.contact != null,
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: MapScrollWindow(
+                  isEditingMapIcon: _isEditingIconDescription,
+                ),
               ),
             ),
 
